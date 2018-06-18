@@ -9,6 +9,7 @@ import (
 	"go/ast"
 	"reflect"
 	"strings"
+	"encoding/json"
 )
 
 //----type
@@ -32,9 +33,9 @@ func (gs GenStruct) Print(){
 
 //---methods
 type GenFuncApiParam struct{
-	Url string
-	Auth bool
-	Method string
+	Url string `json:"url"`
+	Auth bool `json:"auth"`
+	Method string `json:"method,omitempty"`
 }
 
 type GenFuncParam struct {
@@ -49,41 +50,63 @@ type GenFunc struct {
 	ApiParams *GenFuncApiParam
 }
 
+func (gf GenFunc) Print(){
+	fmt.Printf("Func name: %s\n", gf.Name)
+	fmt.Printf("Func recv: %s\n", gf.Recv)
+	fmt.Printf("Func ApiParams: %s\n", gf.ApiParams)
+	fmt.Println("Func Params:")
+	for _,v := range gf.Params{
+		fmt.Printf("\t %s %s\n", v.Name, v.Type)
+	}
+}
+
 var (
 	gmethods map[string]*GenFunc
 	gtype map[string]*GenStruct
 )
 
 func processFuncDecl(fd *ast.FuncDecl) {
-	return
+
 	// name
-	fmt.Println("----------func-------------")
-	fmt.Printf("func name: %s\n", fd.Name.Name)
+	//fmt.Println("----------func-------------")
+	//fmt.Printf("func name: %s\n", fd.Name.Name)
+
+	gfn := &GenFunc{
+		Name:      fd.Name.Name,
+		ApiParams: &GenFuncApiParam{},
+	}
 
 	// comments
 	if fd.Doc == nil {
-		fmt.Printf("func %#v doesnt have comments\n", fd.Name.Name)
+		//fmt.Printf("func %#v doesnt have comments\n", fd.Name.Name)
+		return
 	} else {
-		fmt.Printf("func %#v comments:\n", fd.Name.Name)
+		//fmt.Printf("func %#v comments:\n", fd.Name.Name)
 		for _, comment := range fd.Doc.List {
-			fmt.Printf("%s\n", comment.Text)
+			//fmt.Printf("%s\n", comment.Text)
+			apt := comment.Text[strings.Index(comment.Text, "{"):len(comment.Text)]
+			//fmt.Printf("%s\n", apt)
+			json.Unmarshal([]byte(apt), gfn.ApiParams)
 		}
 	}
 
 	// is methods
 	if fd.Recv == nil {
-		fmt.Printf("func %#v is not method\n", fd.Name.Name)
-	}else {
-		fmt.Printf("method %#v fields:\n", fd.Name.Name)
-		for _, fn := range fd.Recv.List{
-			switch v:=fn.Type.(type) {
+		return
+		//fmt.Printf("func %#v is not method\n", fd.Name.Name)
+	} else {
+		//fmt.Printf("method %#v fields:\n", fd.Name.Name)
+		for _, fn := range fd.Recv.List {
+			switch v := fn.Type.(type) {
 			case *ast.StarExpr:
 				{
-					fmt.Printf("type(*ast.StarExpr) name: %s\n", v.X)
+					//fmt.Printf("type(*ast.StarExpr) name: %s\n", v.X)
+					gfn.Recv = fmt.Sprintf("%s", v.X)
 				}
 			case *ast.Ident:
 				{
-					fmt.Printf("type(*ast.Ident) name: %s\n", v.Name)
+					//fmt.Printf("type(*ast.Ident) name: %s\n", v.Name)
+					gfn.Recv = v.Name
 				}
 
 			}
@@ -91,22 +114,33 @@ func processFuncDecl(fd *ast.FuncDecl) {
 	}
 
 	// params
-	fmt.Printf("func %#v params:\n", fd.Name.Name)
-	for _, fn := range fd.Type.Params.List{
-		switch v:=fn.Type.(type) {
+	//fmt.Printf("func %#v params:\n", fd.Name.Name)
+	gfn.Params = make([]*GenFuncParam, len(fd.Type.Params.List))
+	for i, fn := range fd.Type.Params.List {
+		switch v := fn.Type.(type) {
 		case *ast.SelectorExpr:
 			{
-				fmt.Printf("param name %s type(*ast.SelectorExpr) name: %s\n", fn.Names, v.Sel.Name)
+				gfn.Params[i] = &GenFuncParam{
+					Name: fn.Names[0].Name,
+					Type: v.Sel.Name,
+				}
+				//fmt.Printf("param name %s type(*ast.SelectorExpr) name: %s\n", fn.Names, v.Sel.Name)
 			}
 		case *ast.Ident:
 			{
-				fmt.Printf("param name %s type(*ast.Ident) name: %s\n", fn.Names, v.Name)
+				gfn.Params[i] = &GenFuncParam{
+					Name: fn.Names[0].Name,
+					Type: v.Name,
+				}
+				//fmt.Printf("param name %s type(*ast.Ident) name: %s\n", fn.Names, v.Name)
 			}
 		}
 	}
 
-	fmt.Println("-----------------------")
-	fmt.Println()
+	gmethods[gfn.Recv+"."+gfn.Name] = gfn
+
+	//fmt.Println("-----------------------")
+	//fmt.Println()
 }
 
 func processGenDecl(gd *ast.GenDecl) {
@@ -121,10 +155,10 @@ SPECS_LOOP:
 			continue
 		}
 
-		gs := &GenStruct{
+		gstruct := &GenStruct{
 			Name: currType.Name.Name,
 		}
-		lf := make([]*GenStructFiled, len(currStruct.Fields.List))
+		fileds := make([]*GenStructFiled, len(currStruct.Fields.List))
 
 		if len(currStruct.Fields.List) == 0 {
 			continue SPECS_LOOP
@@ -138,22 +172,19 @@ SPECS_LOOP:
 			tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
 			tags := tag.Get("apivalidator")
 			if tags == "" {
-
 				continue SPECS_LOOP
 			}
 			ftags := ParserTags(tags)
-			lf[i] = &GenStructFiled{
+			fileds[i] = &GenStructFiled{
 				Name: field.Names[0].Name,
 				Type: fmt.Sprintf("%s", field.Type),
 				Tags: ftags,
 			}
 		}
 
-		gs.Fileds = lf
-		gtype[gs.Name] = gs
+		gstruct.Fileds = fileds
+		gtype[gstruct.Name] = gstruct
 	}
-
-	fmt.Println()
 }
 
 func ParserTags(tags string) map[string]interface{} {
@@ -192,6 +223,7 @@ func main() {
 	//defer out.Close()
 
 	gtype = make(map[string]*GenStruct)
+	gmethods = make(map[string]*GenFunc)
 
 	for _, f := range node.Decls {
 		switch v := f.(type) {
@@ -207,9 +239,15 @@ func main() {
 	}
 
 
-	for _, v := range gtype{
+	//for _, v := range gtype{
+	//	v.Print()
+	//}
+
+	for _, v := range gmethods{
 		v.Print()
+		fmt.Println()
 	}
+
 		//g, ok := f.(*ast.GenDecl)
 		//if !ok {
 		//	fmt.Printf("SKIP %T is not *ast.GenDecl\n", f)
