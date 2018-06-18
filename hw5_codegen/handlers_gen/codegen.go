@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"go/token"
 	"go/parser"
 	"log"
@@ -10,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"encoding/json"
+	"os"
 )
 
 //----type
@@ -174,7 +174,7 @@ SPECS_LOOP:
 			if tags == "" {
 				continue SPECS_LOOP
 			}
-			ftags := ParserTags(tags)
+			ftags := ParseTags(tags)
 			fileds[i] = &GenStructFiled{
 				Name: field.Names[0].Name,
 				Type: fmt.Sprintf("%s", field.Type),
@@ -187,7 +187,7 @@ SPECS_LOOP:
 	}
 }
 
-func ParserTags(tags string) map[string]interface{} {
+func ParseTags(tags string) map[string]interface{} {
 	var name string
 	var val interface{}
 	r := make(map[string]interface{})
@@ -209,21 +209,12 @@ func ParserTags(tags string) map[string]interface{} {
 	return r
 }
 
-func main() {
+func ParseApi(file string){
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, os.Args[1], nil, parser.ParseComments)
+	node, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// Print the AST.
-	//ast.Print(fset, node)
-
-	//out, _ := os.Create(os.Args[2])
-	//defer out.Close()
-
-	gtype = make(map[string]*GenStruct)
-	gmethods = make(map[string]*GenFunc)
 
 	for _, f := range node.Decls {
 		switch v := f.(type) {
@@ -237,6 +228,13 @@ func main() {
 			}
 		}
 	}
+}
+
+func main() {
+	gtype = make(map[string]*GenStruct)
+	gmethods = make(map[string]*GenFunc)
+
+	ParseApi(os.Args[1])
 
 
 	//for _, v := range gtype{
