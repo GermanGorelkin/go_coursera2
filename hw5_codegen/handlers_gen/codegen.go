@@ -236,78 +236,14 @@ func main() {
 
 	ParseApi(os.Args[1])
 
+	fmt.Println("--types")
+	for _, v := range gtype{
+		v.Print()
+	}
 
-	//for _, v := range gtype{
-	//	v.Print()
-	//}
-
+	fmt.Println("--methods")
 	for _, v := range gmethods{
 		v.Print()
 		fmt.Println()
 	}
-
-		//g, ok := f.(*ast.GenDecl)
-		//if !ok {
-		//	fmt.Printf("SKIP %T is not *ast.GenDecl\n", f)
-		//	continue
-		//}
-	//SPECS_LOOP:
-	//	for _, spec := range g.Specs {
-	//		currType, ok := spec.(*ast.TypeSpec)
-	//		if !ok {
-	//			fmt.Printf("SKIP %T is not ast.TypeSpec\n", spec)
-	//			continue
-	//		}
-	//
-	//		currStruct, ok := currType.Type.(*ast.StructType)
-	//		if !ok {
-	//			fmt.Printf("SKIP %T is not ast.StructType\n", currStruct)
-	//			continue
-	//		}
-
-			//if g.Doc == nil {
-			//	fmt.Printf("SKIP struct %#v doesnt have comments\n", currType.Name.Name)
-			//	continue
-			//}
-			//
-			//needCodegen := false
-			//for _, comment := range g.Doc.List {
-			//	needCodegen = needCodegen || strings.HasPrefix(comment.Text, "// cgen: binpack")
-			//}
-			//if !needCodegen {
-			//	fmt.Printf("SKIP struct %#v doesnt have cgen mark\n", currType.Name.Name)
-			//	continue SPECS_LOOP
-			//}
-
-			//fmt.Printf("process struct %s\n", currType.Name.Name)
-
-			//fmt.Fprintln(out, "func (in *"+currType.Name.Name+") Unpack(data []byte) error {")
-			//fmt.Fprintln(out, "	r := bytes.NewReader(data)")
-
-		//FIELDS_LOOP:
-			//for _, field := range currStruct.Fields.List {
-
-				//if field.Tag != nil {
-				//	tag := reflect.StructTag(field.Tag.Value[1 : len(field.Tag.Value)-1])
-				//	if tag.Get("cgen") == "-" {
-				//		continue FIELDS_LOOP
-				//	}
-				//}
-
-				//fieldName := field.Names[0].Name
-				//fileType := field.Type.(*ast.Ident).Name
-
-				//fmt.Printf("\tgenerating code for field %s.%s\n", currType.Name.Name, fieldName)
-
-				//switch fileType {
-				//case "int":
-				//	intTpl.Execute(out, tpl{fieldName})
-				//case "string":
-				//	strTpl.Execute(out, tpl{fieldName})
-				//default:
-				//	log.Fatalln("unsupported", fileType)
-				//}
-			//}
-		//}
-	//}
 }
