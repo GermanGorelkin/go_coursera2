@@ -10,6 +10,9 @@ import (
 	"strings"
 	"encoding/json"
 	"os"
+	"text/template"
+	"bytes"
+	"io"
 )
 
 //----type
@@ -63,6 +66,7 @@ func (gf GenFunc) Print(){
 var (
 	gmethods map[string]*GenFunc
 	gtype map[string]*GenStruct
+	recvType map[string]struct{}
 )
 
 func processFuncDecl(fd *ast.FuncDecl) {
@@ -138,6 +142,7 @@ func processFuncDecl(fd *ast.FuncDecl) {
 	}
 
 	gmethods[gfn.Recv+"."+gfn.Name] = gfn
+	recvType[gfn.Recv]= struct{}{}
 
 	//fmt.Println("-----------------------")
 	//fmt.Println()
@@ -230,20 +235,190 @@ func ParseApi(file string){
 	}
 }
 
+func GenHeader(out io.Writer){
+	fmt.Fprintln(out, hTmp)
+}
+
+func GenServeHTTP(out io.Writer){
+	for typeName := range recvType {
+		var cases []string
+
+		for _, fun := range gmethods {
+			if fun.Recv != typeName {
+				continue
+			}
+			if fun.ApiParams.Method == "" {
+				var tpl bytes.Buffer
+				data := struct {
+					Url  string
+					Name string
+				}{
+					Url:  fun.ApiParams.Url,
+					Name: fun.Name,
+				}
+				if err := serveHTTPCase1Tpl.Execute(&tpl, data); err != nil {
+					panic(err)
+				}
+				cases = append(cases, tpl.String())
+			} else {
+				var tpl bytes.Buffer
+				data := struct {
+					Url    string
+					Name   string
+					Method string
+				}{
+					Url:    fun.ApiParams.Url,
+					Name:   fun.Name,
+					Method: fun.ApiParams.Method,
+				}
+				if err := serveHTTPCase2Tpl.Execute(&tpl, data); err != nil {
+					panic(err)
+				}
+				cases = append(cases, tpl.String())
+			}
+
+		}
+
+		data := struct {
+			Name  string
+			Cases []string
+		}{
+			Name:  typeName,
+			Cases: cases,
+		}
+
+		fmt.Fprintln(out)
+		serveHTTPTpl.Execute(out, data)
+	}
+}
+
 func main() {
 	gtype = make(map[string]*GenStruct)
 	gmethods = make(map[string]*GenFunc)
+	recvType = make(map[string]struct{})
 
 	ParseApi(os.Args[1])
 
-	fmt.Println("--types")
-	for _, v := range gtype{
-		v.Print()
-	}
+	out, _ := os.Create(os.Args[2])
 
-	fmt.Println("--methods")
-	for _, v := range gmethods{
-		v.Print()
-		fmt.Println()
+	GenHeader(out)
+	GenServeHTTP(out)
+
+
+	//fmt.Println("--types")
+	//for _, v := range gtype{
+	//	v.Print()
+	//}
+	//
+	//fmt.Println("--methods")
+	//for _, v := range gmethods{
+	//	v.Print()
+	//	fmt.Println()
+	//}
+}
+
+
+
+
+var(
+
+	serveHTTPTpl = template.Must(template.New("serveHTTPTpl").Parse(`
+func (srv *{{.Name}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	switch {
+	{{range .Cases}}
+        {{.}}
+    {{end}}
+	default:
+		{
+			w.WriteHeader(http.StatusNotFound)
+			w.Write(apiResponse("", fmt.Errorf("unknown method")))
+		}
 	}
 }
+`))
+
+	serveHTTPCase1Tpl = template.Must(template.New("serveHTTPCase1Tpl").Parse(`
+	case r.URL.Path == "{{.Url}}":
+		srv.wrapper{{.Name}}(w, r)
+`))
+
+	serveHTTPCase2Tpl = template.Must(template.New("serveHTTPCase2Tpl").Parse(`
+	case r.URL.Path == "{{.Url}}":
+		if r.Method == http.MethodPost {
+			srv.wrapper{{.Name}}(w, r)
+		} else {
+			w.WriteHeader(http.StatusNotAcceptable)
+			w.Write(apiResponse("", fmt.Errorf("bad method")))
+		}
+`))
+
+)
+
+const
+(hTmp = `package main
+
+import (
+	"net/http"
+	"fmt"
+	"encoding/json"
+	"context"
+	"strconv"
+)
+
+
+func apiResponse(data interface{}, err error) []byte {
+	m := make(map[string]interface{})
+	if err != nil {
+		m["error"] = err.Error()
+	} else
+	{
+		m["error"] = ""
+		m["response"] = data
+	}
+
+	b, _ := json.Marshal(m)
+	return b
+}
+
+func apiParRequired(val, name string) error {
+	if val == "" {
+		return fmt.Errorf("%s must me not empty", name)
+	}
+	return nil
+}
+
+func apiParMin(val interface{}, name string, num int) error {
+	switch v := val.(type) {
+	case string:
+		{
+			if len([]rune(v)) < num {
+				return fmt.Errorf("%s len must be >= %d", name, num)
+			}
+		}
+	case int:
+		{
+			if v < num {
+				return fmt.Errorf("%s must be >= %d", name, num)
+			}
+		}
+	}
+	return nil
+}
+
+func apiParMax(val interface{}, name string, num int) error {
+	switch v := val.(type) {
+	case string:
+		{
+			if len([]rune(v)) > num {
+				return fmt.Errorf("%s len must be <= %d", name, num)
+			}
+		}
+	case int:
+		{
+			if v > num {
+				return fmt.Errorf("%s must be <= %d", name, num)
+			}
+		}
+	}
+	return nil
+}`)
