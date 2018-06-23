@@ -63,6 +63,15 @@ func (gf GenFunc) Print(){
 	}
 }
 
+//--------
+type tmpField struct {
+	Name string
+	Type string
+	Required string
+	Min string
+	Max string
+}
+
 var (
 	gmethods map[string]*GenFunc
 	gtype map[string]*GenStruct
@@ -292,6 +301,113 @@ func GenServeHTTP(out io.Writer){
 	}
 }
 
+func GenWrappers(out io.Writer){
+	for _, method := range gmethods {
+		data := struct {
+			Name   string
+			Recv   string
+			Auth   bool
+			Fields []tmpField
+		}{
+			Name: method.Name,
+			Recv: method.Recv,
+			Auth: method.ApiParams.Auth,
+		}
+
+		//Valid
+		par := method.Params[1]
+		gt := gtype[par.Type]
+		var fields []tmpField
+		for _, f := range gt.Fileds {
+			fname := strings.ToLower(f.Name)
+
+			if v, ok := f.Tags["paramname"]; ok {
+				fname = v.(string)
+			}
+
+			filed := tmpField{
+				Name: fname,
+				Type: f.Type,
+			}
+			var tpl bytes.Buffer
+
+			// Required
+			if _, ok := f.Tags["required"]; ok {
+				data := struct {
+					Name string
+				}{
+					Name: fname,
+				}
+				if err := validRequiredTpl.Execute(&tpl, data); err != nil {
+					panic(err)
+				}
+				filed.Required = tpl.String()
+				tpl.Reset()
+			}
+
+			// Min
+			if val, ok := f.Tags["min"]; ok {
+				data := struct {
+					Name  string
+					Value string
+				}{
+					Name:  fname,
+					Value: val.(string),
+				}
+				if err := validMinTpl.Execute(&tpl, data); err != nil {
+					panic(err)
+				}
+				filed.Min = tpl.String()
+				tpl.Reset()
+			}
+			// Max
+			if val, ok := f.Tags["max"]; ok {
+				data := struct {
+					Name  string
+					Value string
+				}{
+					Name:  fname,
+					Value: val.(string),
+				}
+				if err := validMaxTpl.Execute(&tpl, data); err != nil {
+					panic(err)
+				}
+				filed.Max = tpl.String()
+				tpl.Reset()
+			}
+			// Enum
+			if val, ok := f.Tags["enum"]; ok {
+				//map[default:warrior enum:[warrior sorcerer rouge]]
+
+				df := f.Tags["default"].(string)
+
+				data := struct {
+					Name    string
+					Default string
+					Enum    []string
+				}{
+					Name:    fname,
+					Default: df,
+					Enum:    val.([]string),
+				}
+
+				if err := validEnumTpl.Execute(&tpl, data); err != nil {
+					panic(err)
+				}
+				//fmt.Println(tpl.String())
+				filed.Max = tpl.String()
+				tpl.Reset()
+			}
+			//
+
+			fields = append(fields, filed)
+		}
+
+		data.Fields = fields
+		wrapperMethodTpl.Execute(out, data)
+	}
+}
+
 func main() {
 	gtype = make(map[string]*GenStruct)
 	gmethods = make(map[string]*GenFunc)
@@ -303,6 +419,7 @@ func main() {
 
 	GenHeader(out)
 	GenServeHTTP(out)
+	GenWrappers(out)
 
 
 	//fmt.Println("--types")
@@ -337,20 +454,125 @@ func (srv *{{.Name}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 `))
 
-	serveHTTPCase1Tpl = template.Must(template.New("serveHTTPCase1Tpl").Parse(`
-	case r.URL.Path == "{{.Url}}":
-		srv.wrapper{{.Name}}(w, r)
-`))
+	serveHTTPCase1Tpl = template.Must(template.New("serveHTTPCase1Tpl").Parse(
+		`case r.URL.Path == "{{.Url}}":
+		srv.wrapper{{.Name}}(w, r)`))
 
-	serveHTTPCase2Tpl = template.Must(template.New("serveHTTPCase2Tpl").Parse(`
-	case r.URL.Path == "{{.Url}}":
+	serveHTTPCase2Tpl = template.Must(template.New("serveHTTPCase2Tpl").Parse(
+		`case r.URL.Path == "{{.Url}}":
 		if r.Method == http.MethodPost {
 			srv.wrapper{{.Name}}(w, r)
 		} else {
 			w.WriteHeader(http.StatusNotAcceptable)
 			w.Write(apiResponse("", fmt.Errorf("bad method")))
-		}
-`))
+		}`))
+
+	validRequiredTpl = template.Must(template.New("validRequiredTpl").Parse(
+	`if err := apiParRequired({{.Name}}, "{{.Name}}"); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(apiResponse("", err))
+
+		return
+		}`))
+
+	validMinTpl = template.Must(template.New("validMinTpl").Parse(
+	`if err := apiParMin({{.Name}}, "{{.Name}}", {{.Value}}); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(apiResponse("", err))
+
+		return
+		}`))
+
+	validMaxTpl = template.Must(template.New("validMaxTpl").Parse(
+	`if err := apiParMax({{.Name}}, "{{.Name}}", {{.Value}}); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(apiResponse("", err))
+
+		return
+		}`))
+
+	validEnumTpl = template.Must(template.New("validEnumTpl").Parse(
+		`l{{.Name}} := map[string]struct{}{
+	{{range .Enum}}
+		"{{.}}":      {},
+	{{end}}
+	}
+	{{.Name}} := r.FormValue("{{.Name}}")
+	if {{.Name}} == "" {
+		{{.Name}} = "{{.Default}}"
+	}
+	_, ok := l{{.Name}}[{{.Name}}]
+	if !ok {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write(apiResponse("", fmt.Errorf("{{.Name}} must be one of {{.Enum}}")))
+	
+		return
+	}`))
+
+	wrapperMethodTpl = template.Must(template.New("wrapperMethodTpl").Parse(`
+    func (srv *{{.Recv}}) wrapper{{.Name}}(w http.ResponseWriter, r *http.Request) {
+
+	// auth
+	{{if .Auth}}
+	if r.Header.Get("X-Auth") != "100500" {
+		w.WriteHeader(http.StatusForbidden)
+		w.Write(apiResponse("", fmt.Errorf("unauthorized")))
+
+		return
+	}
+    {{end}}
+
+
+	// valid
+	{{range .Fields}}
+		{{if eq .Type "string"}}
+            {{.Name}} := r.FormValue("{{.Name}}")
+        {{else}}
+            {{.Name}}, err := strconv.Atoi(r.FormValue("{{.Name}}"))
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write(apiResponse("", fmt.Errorf("{{.Name}} must be int")))
+
+				return
+			}
+        {{end}}
+
+        
+
+		//Required
+		{{.Required}}
+		//Min
+		{{.Min}}
+		//Max
+		{{.Max}}
+
+    {{end}}
+
+	// bl
+	//ctx, _ := context.WithCancel(r.Context())
+	//
+	//in := CreateParams{
+	//	Login:  login,
+	//	Age:    age,
+	//	Name:   full_name,
+	//	Status: status,
+	//}
+	//u, err := srv.Create(ctx, in)
+	//
+	//if err != nil {
+	//	switch ar := err.(type) {
+	//	case ApiError:
+	//		w.WriteHeader(ar.HTTPStatus)
+	//	default:
+	//		w.WriteHeader(http.StatusInternalServerError)
+	//	}
+	//
+	//	w.Write(apiResponse("", err))
+	//	return
+	//}
+	//
+	//w.Write(apiResponse(u, err))
+}`))
 
 )
 
