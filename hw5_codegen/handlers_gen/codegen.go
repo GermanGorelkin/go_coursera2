@@ -66,6 +66,7 @@ func (gf GenFunc) Print(){
 //--------
 type tmpField struct {
 	Name string
+	FieldName string
 	Type string
 	Required string
 	Min string
@@ -308,6 +309,7 @@ func GenWrappers(out io.Writer){
 			Recv   string
 			Auth   bool
 			Fields []tmpField
+			ParamType   string
 		}{
 			Name: method.Name,
 			Recv: method.Recv,
@@ -319,16 +321,19 @@ func GenWrappers(out io.Writer){
 		gt := gtype[par.Type]
 		var fields []tmpField
 		for _, f := range gt.Fileds {
-			fname := strings.ToLower(f.Name)
+			fname := f.Name
+			filed := tmpField{
+				FieldName:fname,
+				Type: f.Type,
+			}
 
 			if v, ok := f.Tags["paramname"]; ok {
 				fname = v.(string)
+			}else{
+				fname = strings.ToLower(fname)
 			}
+			filed.Name =fname
 
-			filed := tmpField{
-				Name: fname,
-				Type: f.Type,
-			}
 			var tpl bytes.Buffer
 
 			// Required
@@ -380,15 +385,18 @@ func GenWrappers(out io.Writer){
 				//map[default:warrior enum:[warrior sorcerer rouge]]
 
 				df := f.Tags["default"].(string)
+				en := val.([]string)
 
 				data := struct {
 					Name    string
 					Default string
 					Enum    []string
+					EnumStr string
 				}{
 					Name:    fname,
 					Default: df,
-					Enum:    val.([]string),
+					Enum:    en,
+					EnumStr: strings.Join(en, ", "),
 				}
 
 				if err := validEnumTpl.Execute(&tpl, data); err != nil {
@@ -403,6 +411,7 @@ func GenWrappers(out io.Writer){
 			fields = append(fields, filed)
 		}
 
+		data.ParamType = par.Type
 		data.Fields = fields
 		wrapperMethodTpl.Execute(out, data)
 	}
@@ -497,14 +506,14 @@ func (srv *{{.Name}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"{{.}}":      {},
 	{{end}}
 	}
-	{{.Name}} := r.FormValue("{{.Name}}")
+	// {{.Name}} := r.FormValue("{{.Name}}")
 	if {{.Name}} == "" {
 		{{.Name}} = "{{.Default}}"
 	}
 	_, ok := l{{.Name}}[{{.Name}}]
 	if !ok {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write(apiResponse("", fmt.Errorf("{{.Name}} must be one of {{.Enum}}")))
+		w.Write(apiResponse("", fmt.Errorf("{{.Name}} must be one of [{{.EnumStr}}]")))
 	
 		return
 	}`))
@@ -548,30 +557,32 @@ func (srv *{{.Name}}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
     {{end}}
 
+
 	// bl
-	//ctx, _ := context.WithCancel(r.Context())
-	//
-	//in := CreateParams{
-	//	Login:  login,
-	//	Age:    age,
-	//	Name:   full_name,
-	//	Status: status,
-	//}
-	//u, err := srv.Create(ctx, in)
-	//
-	//if err != nil {
-	//	switch ar := err.(type) {
-	//	case ApiError:
-	//		w.WriteHeader(ar.HTTPStatus)
-	//	default:
-	//		w.WriteHeader(http.StatusInternalServerError)
-	//	}
-	//
-	//	w.Write(apiResponse("", err))
-	//	return
-	//}
-	//
-	//w.Write(apiResponse(u, err))
+
+	ctx, _ := context.WithCancel(r.Context())
+	
+	in := {{.ParamType}}{
+		{{range .Fields}}
+			{{.FieldName}}:  {{.Name}},
+    	{{end}}
+	}
+
+	u, err := srv.{{.Name}}(ctx, in)
+	
+	if err != nil {
+		switch ar := err.(type) {
+		case ApiError:
+			w.WriteHeader(ar.HTTPStatus)
+		default:
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	
+		w.Write(apiResponse("", err))
+		return
+	}
+	
+	w.Write(apiResponse(u, err))
 }`))
 
 )
