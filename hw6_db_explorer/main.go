@@ -88,6 +88,101 @@ func main() {
 	//	panic(err)
 	//}
 
+	// Query d
+	//rows, err := db.Query("SELECT * from items")
+	//if err != nil {
+	//	panic(err)
+	//}
+	//
+	//cols, err := rows.Columns()
+	//if err != nil {
+	//	panic(err)
+	//}
+	//fmt.Printf("columns: %s\n", cols)
+	//
+	//colType, err := rows.ColumnTypes()
+	//if err != nil {
+	//	panic(err)
+	//}
+	//fmt.Printf("column type: %s\n\n", colType)
+	//
+	//vals := make([]interface{},len(cols))
+	//for i := range cols{
+	//	vals[i] = new(sql.RawBytes)
+	//}
+	//var data []map[string]interface{}
+	//
+	//for rows.Next() {
+	//	err = rows.Scan(vals...)
+	//	if err != nil {
+	//		panic(err)
+	//	}
+	//
+	//	val := make(map[string]interface{}, len(cols))
+	//	for i, v := range cols{
+	//		switch colType[i].DatabaseTypeName() {
+	//		case "INT":
+	//			{
+	//				val[v], _ = RBtoInt(vals[i])
+	//			}
+	//		case "VARCHAR", "TEXT":
+	//			{
+	//				if nullable, _ := colType[i].Nullable(); nullable{
+	//					s := RBtoNullString(vals[i])
+	//					if s.Valid{
+	//						val[v] = s.String
+	//					} else {
+	//						val[v] = nil
+	//					}
+	//				} else {
+	//					val[v] = RBtoString(vals[i])
+	//				}
+	//			}
+	//		}
+	//	}
+	//
+	//	data = append(data, val)
+	//}
+	//rows.Close()
+	//if err := rows.Err(); err != nil {
+	//	panic(err)
+	//}
+
+	//res := NewResponse()
+	//res.Response["records"] = data
+	//b, err := res.Json()
+	//fmt.Println(string(b))
+
+	//var myMap = make(map[string]interface{})
+	//rows, err := db.Query("SELECT id, title, updated, description FROM items")
+	//defer rows.Close()
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//colNames, err := rows.Columns()
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//cols := make([]interface{}, len(colNames))
+	//colPtrs := make([]interface{}, len(colNames))
+	//for i := 0; i < len(colNames); i++ {
+	//	colPtrs[i] = &cols[i]
+	//}
+	//for rows.Next() {
+	//	err = rows.Scan(colPtrs...)
+	//	if err != nil {
+	//		log.Fatal(err)
+	//	}
+	//	for i, col := range cols {
+	//		myMap[colNames[i]] = col
+	//	}
+	//	// Do something with the map
+	//	for key, val := range myMap {
+	//		fmt.Println("Key:", key, "Value Type:", reflect.TypeOf(val), val)
+	//	}
+	//}
+
+	// --------
 	handler, err := NewDbExplorer(db)
 	if err != nil {
 		panic(err)
@@ -95,6 +190,7 @@ func main() {
 
 	fmt.Println("starting server at :8082")
 	http.ListenAndServe(":8082", handler)
+	// ------------
 
 
 	//se := make([]interface{}, 2)
