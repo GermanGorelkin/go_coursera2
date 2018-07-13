@@ -7,15 +7,14 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"io/ioutil"
+	"fmt"
+	"reflect"
 )
 
 // тут вы пишете код
 // обращаю ваше внимание - в этом задании запрещены глобальные переменные
 
-//type DBRow struct{
-//	Name string
-//	Value *sql.RawBytes
-//}
 type DBColumn struct {
 	Field string
 	Type string
@@ -26,6 +25,19 @@ type DBColumn struct {
 	Extra string
 	Privileges string
 	Comment string
+}
+func (c *DBColumn) GetType() string{
+	switch {
+	case strings.Contains(c.Type, "varchar"), c.Type == "text":
+		{
+			return "string"
+		}
+	case c.Type == "int":
+		{
+			return "int"
+		}
+	}
+	return ""
 }
 
 func RBtoString(val interface{}) string {
@@ -54,40 +66,114 @@ func (q sqlQuery) Select(col ...string)sqlQuery {
 	if len(col) == 0 {
 		return sqlQuery("SELECT * ")
 	}
-	return sqlQuery("SELECT " + strings.Join(col, ",") + " ")
+	return sqlQuery(fmt.Sprintf("SELECT %s ", strings.Join(col, ",")))
 }
 func (q sqlQuery) From(table string) sqlQuery {
-	return sqlQuery(string(q) + " FROM " + table + " ")
+	return sqlQuery(fmt.Sprintf("%s FROM %s ", string(q), table))
+}
+func (q sqlQuery) UpdateTable(table string) sqlQuery {
+	return sqlQuery(fmt.Sprintf("UPDATE %s ", table))
 }
 func (q sqlQuery) WhereByPRIKey(columns []*DBColumn, val string) sqlQuery {
 	if val == ""{
 		return q
 	}
-	var key string
-	for _, c := range columns {
-		if c.Key == "PRI" {
-			key = c.Field
-			continue
-		}
-	}
+	key := getPRI(columns)
+	//var key string
+	//for _, c := range columns {
+	//	if c.Key == "PRI" {
+	//		key = c.Field
+	//		continue
+	//	}
+	//}
 	if key == "" {
 		return q
 	}
-	return sqlQuery(string(q) + " WHERE " + key + "=" + val + " ")
+	return sqlQuery(fmt.Sprintf("%s WHERE %s=%s ", string(q), key, val))
 }
 func (q sqlQuery) Limit(limit string) sqlQuery {
 	if _, err := strconv.Atoi(limit); err != nil {
 		limit = "5"
 	}
-	return sqlQuery(string(q) + " LIMIT " + limit + " ")
+	return sqlQuery(fmt.Sprintf("%s LIMIT %s ", string(q), limit))
 }
 func (q sqlQuery) Offset(offset string) sqlQuery {
 	if _, err := strconv.Atoi(offset); err != nil {
 		offset = "0"
 	}
-	return sqlQuery(string(q) + " OFFSET " + offset + " ")
+	return sqlQuery(fmt.Sprintf("%s OFFSET %s ", string(q), offset))
 }
+func (q sqlQuery) Update(columns []*DBColumn, vals map[string]interface{}) (sqlQuery, error) {
+	log.Println(vals)
+	s := "SET "
+	for _, col := range columns {
+		name := col.Field
+		v, ok := vals[name]
 
+		if v != nil {
+			if reflect.TypeOf(v).Name() != col.GetType(){
+				return q, fmt.Errorf("field %s have invalid type", name)
+			}
+			fmt.Println(reflect.TypeOf(v).Name(), col.GetType())
+		}
+		if col.Null == "NO" && ok && v==nil {
+			return q, fmt.Errorf("field %s have invalid type", name)
+		}
+
+		//log.Println(name, v, col.Null, col.Key, ok)
+		if col.Key == "PRI" && ok {
+			return q, fmt.Errorf("field %s have invalid type", name)
+		}
+		if col.Key == "PRI" || !ok{
+			continue
+		}
+		if col.Null == "YES" && ok && v==nil {
+			v = "NULL"
+		}
+
+		if (strings.Contains(col.Type, "varchar") || col.Type == "text") && v != "NULL"{
+			v = fmt.Sprintf("'%s'", v)
+		}
+
+		s = fmt.Sprintf("%s %s=%s,", s, name, v)
+	}
+	s = strings.TrimSuffix(s, ",")
+	return sqlQuery(s), nil
+}
+func (q sqlQuery) Insert(table string, columns []*DBColumn, vals map[string]interface{}) (sqlQuery, error) {
+	var scol string
+	var sval string
+	for _, col := range columns {
+		name := col.Field
+		v, ok := vals[name]
+
+		//log.Println(name, v, col.Null, col.Key, ok)
+		if col.Key == "PRI"{
+			continue
+		}
+		if col.Null == "NO" && col.Key != "PRI" && !ok {
+			return q, fmt.Errorf("field %s have invalid type", name)
+		}
+		if col.Null == "YES" && ok {
+			v = "null"
+		} else if col.Null == "YES" && !ok{
+			continue
+		}
+
+		if strings.Contains(col.Type, "varchar") || col.Type == "text"{
+			v = fmt.Sprintf("'%s'", v)
+		}
+
+		scol = fmt.Sprintf("%s %s,", scol, name)
+		sval = fmt.Sprintf("%s %s,", sval, v)
+	}
+
+	scol = strings.TrimSuffix(scol, ",")
+	sval = strings.TrimSuffix(sval, ",")
+	result := fmt.Sprintf("INSERT INTO %s(%s) VALUES(%s)", table, scol, sval)
+	log.Println(result)
+	return sqlQuery(result), nil
+}
 
 type DBResponse struct {
 	Response map[string]interface{} `json:"response,omitempty"`
@@ -109,6 +195,15 @@ type DBHandler struct{
 //	log.Println(h, pattern)
 //	h.ServeHTTP(w, r)
 //}
+
+func getPRI(columns []*DBColumn)(field string) {
+	for _, c := range columns {
+		if c.Key == "PRI" {
+			return c.Field
+		}
+	}
+	return
+}
 
 func NewDBHandler(db *sql.DB) *DBHandler {
 	return &DBHandler{db: db}
@@ -164,7 +259,7 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 			path := strings.Split(req.URL.Path, "/")
 			table := path[1]
 			var id string
-			if len(path)==3 {
+			if len(path) == 3 {
 				id = path[2]
 			}
 
@@ -176,7 +271,7 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 					From(table).
 					WhereByPRIKey(columns, id).
 					Limit(limit).Offset(offset)
-				log.Println(q)
+				//log.Println(q)
 				data, err := mux.query(q)
 				if err != nil {
 					log.Println(err)
@@ -184,13 +279,13 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 					return
 				}
 				res := NewResponse()
-				if len(data)>0 {
+				if len(data) > 0 {
 					if id == "" {
 						res.Response["records"] = data
 					} else {
 						res.Response["record"] = data[0]
 					}
-				} else{
+				} else {
 					res.Error = "record not found"
 					w.WriteHeader(http.StatusNotFound)
 				}
@@ -200,12 +295,95 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 					w.WriteHeader(http.StatusInternalServerError)
 					return
 				}
+				//log.Println(string(b))
 				w.Write(b)
 
 			} else if req.Method == http.MethodPost {
+				res := NewResponse()
+				b, err := ioutil.ReadAll(req.Body)
+				if err != nil {
+					log.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				defer req.Body.Close()
+
+				var data map[string]interface{}
+				json.Unmarshal(b, &data)
+
+				var q sqlQuery
+				q = q.UpdateTable(table)
+				upd, err := q.Update(columns, data)
+				if err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					res.Error = err.Error()
+					b, _ := res.Json()
+					w.Write(b)
+					return
+				}
+				q = q + upd
+				q = q.WhereByPRIKey(columns, id)
+				log.Println(q)
+
+				_, eff, err := mux.exec(q)
+				log.Println(eff)
+				if err != nil {
+					log.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
+				res.Response["updated"] = eff
+				b, err = res.Json()
+				if err != nil {
+					log.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				w.Write(b)
 
 			} else if req.Method == http.MethodPut {
+				b, err := ioutil.ReadAll(req.Body)
+				if err != nil {
+					log.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				defer req.Body.Close()
 
+				var data map[string]interface{}
+				json.Unmarshal(b, &data)
+
+				var q sqlQuery
+				q, err = q.Insert(table, columns, data)
+				if err != nil {
+					log.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				//log.Println(q)
+				id, _, err := mux.exec(q)
+				if err != nil {
+					log.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+
+				key := getPRI(columns)
+				if key == "" {
+					log.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				res := NewResponse()
+				res.Response[key] = id
+				b, err = res.Json()
+				if err != nil {
+					log.Println(err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				w.Write(b)
 			}
 		})
 	}
@@ -213,13 +391,25 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 	return mux, nil
 }
 
+func (h *DBHandler) exec(q sqlQuery) (id int64, eff int64, err error) {
+	res, err := h.db.Exec(string(q))
+	if err != nil {
+		return
+	}
+	id, err = res.LastInsertId()
+	if err != nil {
+		return
+	}
+	eff, err = res.RowsAffected()
+	if err != nil {
+		return
+	}
+	return
+}
 
 func (h *DBHandler) query(q sqlQuery)([]map[string]interface{}, error) {
 	var data []map[string]interface{}
-	//q := "SELECT * FROM " + table +
-	//	" LIMIT " + limit +
-	//	" OFFSET " + offset
-	//log.Println(q)
+
 	rows, err := h.db.Query(string(q))
 	if err != nil {
 		return data, err
