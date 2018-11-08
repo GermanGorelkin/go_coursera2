@@ -37,7 +37,7 @@ func PrepareTestApis(db *sql.DB) {
 		`DROP TABLE IF EXISTS items;`,
 
 		`CREATE TABLE items (
-  id int(11) NOT NULL AUTO_INCREMENT,
+  id bigint NOT NULL AUTO_INCREMENT,
   title varchar(255) NOT NULL,
   description text NOT NULL,
   updated varchar(255) DEFAULT NULL,
@@ -57,11 +57,12 @@ func PrepareTestApis(db *sql.DB) {
   email varchar(255) NOT NULL,
   info text NOT NULL,
   updated varchar(255) DEFAULT NULL,
+  test bigint NULL,
   PRIMARY KEY (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;`,
 
-		`INSERT INTO users (user_id, login, password, email, info, updated) VALUES
-(1,	'rvasily',	'love',	'rvasily@example.com',	'none',	NULL);`,
+		`INSERT INTO users (user_id, login, password, email, info, updated, test) VALUES
+(1,	'rvasily',	'love',	'rvasily@example.com',	'none',	NULL, NULL);`,
 	}
 
 	for _, q := range qs {
@@ -391,6 +392,7 @@ func TestApis(t *testing.T) {
 						"email":    "rvasily@example.com",
 						"info":     "none",
 						"updated":  nil,
+						"test":  nil,
 					},
 				},
 			},
@@ -402,6 +404,7 @@ func TestApis(t *testing.T) {
 			Body: CR{
 				"info":    "try update",
 				"updated": "now",
+				"test": 11.1,
 			},
 			Result: CR{
 				"response": CR{
@@ -420,6 +423,7 @@ func TestApis(t *testing.T) {
 						"email":    "rvasily@example.com",
 						"info":     "try update",
 						"updated":  "now",
+						"test": 11,
 					},
 				},
 			},
@@ -445,6 +449,7 @@ func TestApis(t *testing.T) {
 				"login":      "qwerty'",
 				"password":   "love\"",
 				"unkn_field": "love",
+				"test": 222,
 			},
 			Result: CR{
 				"response": CR{
@@ -463,6 +468,7 @@ func TestApis(t *testing.T) {
 						"email":    "",
 						"info":     "",
 						"updated":  nil,
+						"test": nil,
 					},
 				},
 			},
@@ -482,6 +488,7 @@ func TestApis(t *testing.T) {
 							"email":    "rvasily@example.com",
 							"info":     "try update",
 							"updated":  "now",
+							"test": 11,
 						},
 						CR{
 							"user_id":  2,
@@ -490,6 +497,7 @@ func TestApis(t *testing.T) {
 							"email":    "",
 							"info":     "",
 							"updated":  nil,
+							"test": nil,
 						},
 					},
 				},

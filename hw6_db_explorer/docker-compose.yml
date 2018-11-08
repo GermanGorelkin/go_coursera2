@@ -1,0 +1,11 @@
+version: '3'
+services:
+  mysql:
+    image: mysql
+    ports:
+    - "3306:3306"
+    volumes:
+    - C:\Users\gg\go\src\github.com\germangorelkin\go_coursera2\hw6_db_explorer\:/docker-entrypoint-initdb.d
+    environment:
+      - MYSQL_ROOT_PASSWORD=1234
+      - MYSQL_DATABASE=golang

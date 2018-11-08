@@ -26,10 +26,11 @@ CREATE TABLE `users` (
   `email` varchar(255) NOT NULL,
   `info` text NOT NULL,
   `updated` varchar(255) DEFAULT NULL,
+  `test` float NOT NULL,
   PRIMARY KEY (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
-INSERT INTO `users` (`user_id`, `login`, `password`, `email`, `info`, `updated`) VALUES
-(1,	'rvasily',	'love',	'rvasily@example.com',	'none',	NULL);
+INSERT INTO `users` (`user_id`, `login`, `password`, `email`, `info`, `updated`, `test`) VALUES
+(1,	'rvasily',	'love',	'rvasily@example.com',	'none',	NULL, 22.2);
 
 -- 2017-11-22 23:33:12

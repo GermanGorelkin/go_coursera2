@@ -1,16 +1,15 @@
 package main
 
 import (
+	"net/http"
 	"database/sql"
 	"encoding/json"
-	"fmt"
-	"io/ioutil"
 	"log"
-	"net/http"
-	"net/url"
-	"reflect"
 	"strconv"
 	"strings"
+	"io/ioutil"
+	"fmt"
+	"reflect"
 )
 
 // тут вы пишете код
@@ -43,6 +42,27 @@ func (c *DBColumn) GetType() string{
 		}
 	}
 	return ""
+}
+
+func RBtoString(val interface{}) string {
+	return string(*(val.(*sql.RawBytes)))
+}
+func RBtoNullString(val interface{}) sql.NullString {
+	s := string(*(val.(*sql.RawBytes)))
+	if s != "" {
+		return sql.NullString{
+			String: s,
+			Valid:  true,
+		}
+	} else {
+		return sql.NullString{
+			String: s,
+			Valid:  false,
+		}
+	}
+}
+func RBtoInt(val interface{}) (int, error) {
+	return strconv.Atoi(string(*(val.(*sql.RawBytes))))
 }
 
 type sqlQuery string
@@ -228,9 +248,6 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 		w.Write(b)
 	})
 
-
-	//return mux, nil
-
 	// GET  /table_name
 	// POST /table_name/{id}
 	// PUT  /table_name/{id}
@@ -256,15 +273,12 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 			if req.Method == http.MethodGet {
 				//limit := req.FormValue("limit")
 				//offset := req.FormValue("offset")
-
-				ref := req.Header.Get("Referer")
-				u, _ := url.Parse(ref)
 				var limit string
-				if l, ok := u.Query()["limit"]; ok{
+				if l, ok := req.URL.Query()["limit"]; ok{
 					limit = l[0]
 				}
 				var offset string
-				if l, ok := u.Query()["offset"]; ok{
+				if l, ok := req.URL.Query()["offset"]; ok{
 					offset = l[0]
 				}
 				//log.Println(limit, " ", offset)
@@ -274,7 +288,7 @@ func NewDbExplorer(db *sql.DB) (http.Handler, error) {
 					From(table).
 					WhereByPRIKey(columns, id).
 					Limit(limit).Offset(offset)
-				//log.Println(q)
+				log.Println(q)
 				data, err := mux.query(q)
 				if err != nil {
 					w.WriteHeader(http.StatusInternalServerError)
